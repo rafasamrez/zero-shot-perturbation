@@ -1,0 +1,87 @@
+drug_name,target_genes,disease_name,disease_abbrev,tissue,expected_efficacy
+Amlitelimab,TNFSF4,"Dermatitis, Atopic",AD,Skin,True
+Belimumab,BAFF,"Dermatitis, Atopic",AD,Skin,False
+Bempikibart,IL7R,"Dermatitis, Atopic",AD,Skin,False
+Brodalumab,IL17RA,"Dermatitis, Atopic",AD,Skin,False
+Crisaborole,PDE4,"Dermatitis, Atopic",AD,Skin,True
+Dupilumab,IL4R,"Dermatitis, Atopic",AD,Skin,True
+Etanercept,TNF,"Dermatitis, Atopic",AD,Skin,False
+Etokimab,IL33,"Dermatitis, Atopic",AD,Skin,False
+Fingolimod,S1PR1;S1PR3;S1PR4;S1PR5,"Dermatitis, Atopic",AD,Skin,False
+Guselkumab,IL23A,"Dermatitis, Atopic",AD,Skin,False
+Ixékizumab,IL17A;IL17F,"Dermatitis, Atopic",AD,Skin,False
+Nemolizumab,IL31RA,"Dermatitis, Atopic",AD,Skin,True
+Omalizumab,IgE,"Dermatitis, Atopic",AD,Skin,True
+Ozanimod,S1PR1;S1PR5,"Dermatitis, Atopic",AD,Skin,False
+Rituximab,CD20,"Dermatitis, Atopic",AD,Skin,False
+Rocatinlimab,OX40,"Dermatitis, Atopic",AD,Skin,True
+Ruxolitinib,JAK1;JAK2,"Dermatitis, Atopic",AD,Skin,True
+Secukinumab,IL17A,"Dermatitis, Atopic",AD,Skin,False
+Tapinarof,AHR,"Dermatitis, Atopic",AD,Skin,True
+Tralokinumab,IL13,"Dermatitis, Atopic",AD,Skin,True
+Upadacitinib,JAK1,"Dermatitis, Atopic",AD,Skin,True
+Vibozimod,S1PR1,"Dermatitis, Atopic",AD,Skin,False
+Afimkibart,TL1A,Crohn Disease,CD,Ileum,True
+Belimumab,BAFF,Crohn Disease,CD,Ileum,False
+Dupilumab,IL4R,Crohn Disease,CD,Ileum,False
+Etanercept,TNF,Crohn Disease,CD,Ileum,True
+Etokimab,IL33,Crohn Disease,CD,Ileum,False
+Fingolimod,S1PR1;S1PR3;S1PR4;S1PR5,Crohn Disease,CD,Ileum,False
+Guselkumab,IL23A,Crohn Disease,CD,Ileum,True
+Ixékizumab,IL17A;IL17F,Crohn Disease,CD,Ileum,False
+Nemolizumab,IL31RA,Crohn Disease,CD,Ileum,False
+Obefazimod,MIR124-1,Crohn Disease,CD,Ileum,True
+Omalizumab,IgE,Crohn Disease,CD,Ileum,False
+Ozanimod,S1PR1;S1PR5,Crohn Disease,CD,Ileum,False
+Rituximab,CD20,Crohn Disease,CD,Ileum,False
+Secukinumab,IL17A,Crohn Disease,CD,Ileum,False
+Tralokinumab,IL13,Crohn Disease,CD,Ileum,False
+Upadacitinib,JAK1,Crohn Disease,CD,Ileum,True
+Vibozimod,S1PR1,Crohn Disease,CD,Ileum,False
+Belimumab,BAFF,Psoriasis,PSO,Skin,False
+Brodalumab,IL17RA,Psoriasis,PSO,Skin,True
+Crisaborole,PDE4,Psoriasis,PSO,Skin,True
+Dupilumab,IL4R,Psoriasis,PSO,Skin,False
+Etanercept,TNF,Psoriasis,PSO,Skin,True
+Etokimab,IL33,Psoriasis,PSO,Skin,False
+Guselkumab,IL23A,Psoriasis,PSO,Skin,True
+Ixékizumab,IL17A;IL17F,Psoriasis,PSO,Skin,True
+Nemolizumab,IL31RA,Psoriasis,PSO,Skin,False
+Omalizumab,IgE,Psoriasis,PSO,Skin,False
+Rituximab,CD20,Psoriasis,PSO,Skin,False
+Ruxolitinib,JAK1;JAK2,Psoriasis,PSO,Skin,True
+Secukinumab,IL17A,Psoriasis,PSO,Skin,True
+Tapinarof,AHR,Psoriasis,PSO,Skin,True
+Tralokinumab,IL13,Psoriasis,PSO,Skin,False
+Vibozimod,S1PR1,Psoriasis,PSO,Skin,True
+Abatacept,CD80;CD86,"Diabetes Mellitus, Type 1",T1D,Whole Blood,True
+Baricitinib,JAK1;JAK2,"Diabetes Mellitus, Type 1",T1D,Whole Blood,True
+Crisaborole,PDE4,"Diabetes Mellitus, Type 1",T1D,Whole Blood,False
+Dupilumab,IL4R,"Diabetes Mellitus, Type 1",T1D,Whole Blood,False
+Etokimab,IL33,"Diabetes Mellitus, Type 1",T1D,Whole Blood,False
+Golimumab,TNF,"Diabetes Mellitus, Type 1",T1D,Whole Blood,True
+Nemolizumab,IL31RA,"Diabetes Mellitus, Type 1",T1D,Whole Blood,False
+Omalizumab,IgE,"Diabetes Mellitus, Type 1",T1D,Whole Blood,False
+Otelixizumab,CD3E,"Diabetes Mellitus, Type 1",T1D,Whole Blood,False
+Rituximab,CD20,"Diabetes Mellitus, Type 1",T1D,Whole Blood,True
+Ruxolitinib,JAK1;JAK2,"Diabetes Mellitus, Type 1",T1D,Whole Blood,True
+Tapinarof,AHR,"Diabetes Mellitus, Type 1",T1D,Whole Blood,False
+Teplizumab,CD3E,"Diabetes Mellitus, Type 1",T1D,Whole Blood,True
+Tralokinumab,IL13,"Diabetes Mellitus, Type 1",T1D,Whole Blood,False
+Afimkibart,TL1A,"Colitis, Ulcerative",UC,Colon,True
+Belimumab,BAFF,"Colitis, Ulcerative",UC,Colon,False
+Bempikibart,IL7R,"Colitis, Ulcerative",UC,Colon,True
+Crisaborole,PDE4,"Colitis, Ulcerative",UC,Colon,True
+Etanercept,TNF,"Colitis, Ulcerative",UC,Colon,True
+Etokimab,IL33,"Colitis, Ulcerative",UC,Colon,False
+Fingolimod,S1PR1;S1PR3;S1PR4;S1PR5,"Colitis, Ulcerative",UC,Colon,True
+Guselkumab,IL23A,"Colitis, Ulcerative",UC,Colon,True
+Nemolizumab,IL31RA,"Colitis, Ulcerative",UC,Colon,False
+Obefazimod,MIR124-1,"Colitis, Ulcerative",UC,Colon,True
+Omalizumab,IgE,"Colitis, Ulcerative",UC,Colon,False
+Ozanimod,S1PR1;S1PR5,"Colitis, Ulcerative",UC,Colon,True
+Rituximab,CD20,"Colitis, Ulcerative",UC,Colon,False
+Rocatinlimab,OX40,"Colitis, Ulcerative",UC,Colon,False
+Tralokinumab,IL13,"Colitis, Ulcerative",UC,Colon,False
+Upadacitinib,JAK1,"Colitis, Ulcerative",UC,Colon,True
+Vibozimod,S1PR1,"Colitis, Ulcerative",UC,Colon,True
