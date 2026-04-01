@@ -5,7 +5,7 @@ import os
 from transformers import AutoModel, AutoTokenizer
 from huggingface_hub import hf_hub_download
 
-def load_cohort_data(disease: str):
+def load_cohort_data(disease: str, n_top_genes: int):
     """
     Parameters
     ----------
@@ -28,7 +28,7 @@ def load_cohort_data(disease: str):
     adata = ad.read_h5ad(path)
 
     # Subset to 2,000 highly variable genes for efficiency
-    sc.pp.highly_variable_genes(adata, n_top_genes=2000, flavor="seurat_v3")
+    sc.pp.highly_variable_genes(adata, n_top_genes=n_top_genes, flavor="seurat_v3")
     adata = adata[:, adata.var.highly_variable].copy()
 
     return adata
