@@ -12,15 +12,14 @@ Two public functions are exposed:
 
     compute_shift_score(original_x, perturbed_x, healthy_centroid) -> torch.Tensor
         Scores how much each perturbed sample shifted toward the healthy centroid
-        in decoded expression space. Currently raises NotImplementedError —
-        the scoring formulation in expression space is under active design.
+        in decoded expression space.
 
 Design note
 -----------
 The latent-space perturbation (EVA report eq. 19–20) perturbs gene_embeddings z
 and decodes the result to a predicted expression profile x' = f_dec(z').
 Scoring therefore operates in *decoded expression space*, not in CLS embedding
-space.  Simple cosine similarity between CLS embeddings is no longer appropriate.
+space.  Simple cosine similarity between CLS embeddings is not appropriate.
 The correct formulation (e.g. correlation-based distance, Wasserstein distance,
 or a normalised expression-space cosine) will be determined separately.
 """
@@ -67,47 +66,26 @@ def compute_shift_score(
     perturbed_x: torch.Tensor,
     healthy_centroid: torch.Tensor,
 ) -> torch.Tensor:
-    """Score how much each perturbation shifted a sample toward the healthy centroid.
-
-    .. note::
-        This function is not yet implemented.  The scoring formulation in decoded
-        expression space (x' vs healthy centroid) is under active design and will
-        be added once a suitable metric is identified.
-
-        Candidate formulations include:
-        - Pearson correlation between x' and the healthy centroid
-        - Normalised Euclidean distance improvement (original → perturbed)
-        - Rank-based or Spearman correlation
-        - Wasserstein distance in expression space
-
-    Parameters
-    ----------
-    original_x : torch.Tensor
-        Decoded expression profiles of disease samples before perturbation,
-        shape ``(batch, seq_len)``.  Produced by ``model.decode()`` on
-        unperturbed gene embeddings.
-    perturbed_x : torch.Tensor
-        Decoded expression profiles after perturbation,
-        shape ``(batch, seq_len)``.  Produced by ``model.decode(z')`` where
-        z' = z + ∇_z L (EVA report eq. 19–20).
-    healthy_centroid : torch.Tensor
-        Mean healthy decoded expression profile from ``compute_healthy_centroid``,
-        shape ``(seq_len,)``.
-
-    Returns
-    -------
-    torch.Tensor
-        Per-sample shift scores of shape ``(batch,)``.
-
-    Raises
-    ------
-    NotImplementedError
-        Always. Scoring in decoded expression space is pending design.
     """
-    raise NotImplementedError(
-        "compute_shift_score is not yet implemented.  Scoring in decoded "
-        "expression space (x' vs healthy centroid) requires a metric that is "
-        "appropriate for log-normalised bulk RNA-seq profiles.  Candidates: "
-        "Pearson correlation, normalised Euclidean distance improvement, or "
-        "Spearman correlation.  Implement and test before running the pipeline."
-    )
+    Score = Pearson correlation improvement toward healthy centroid.
+    
+    For each disease sample i:
+        score_i = pearson(x'_i, c_healthy) - pearson(x_i, c_healthy)
+    
+    A positive score means the perturbation pushed expression toward healthy.
+    The drug-disease score is the median across patients.
+    """
+    def pearson_rows_vs_vector(mat: torch.Tensor, vec: torch.Tensor) -> torch.Tensor:
+        # mat: (B, S), vec: (S,)
+        # Returns per-row Pearson correlation with vec, shape (B,)
+        mat_centered = mat - mat.mean(dim=1, keepdim=True)
+        vec_centered = vec - vec.mean()
+        
+        numerator = (mat_centered * vec_centered).sum(dim=1)
+        denom = mat_centered.norm(dim=1) * vec_centered.norm() + 1e-8
+        return numerator / denom
+    
+    r_original  = pearson_rows_vs_vector(original_x,  healthy_centroid)  # (B,)
+    r_perturbed = pearson_rows_vs_vector(perturbed_x, healthy_centroid)  # (B,)
+    
+    return r_perturbed - r_original  # (B,) — positive = shift toward healthy
