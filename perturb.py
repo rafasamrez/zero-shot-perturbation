@@ -51,7 +51,7 @@ from tqdm import tqdm
 
 from eva_rna.utils import _normalize_and_log
 
-from gene_alias_map import MissingTargetGenesList
+from gene_alias_map import MissingTargetGenesList, GENE_ALIAS_MAP
 from encode_and_save import load_cohort_data
 from gradient_flow_pert_loss import perturbation_loss
 from scoring import compute_healthy_centroid, compute_shift_score
@@ -61,12 +61,12 @@ from scoring import compute_healthy_centroid, compute_shift_score
 # ---------------------------------------------------------------------------
 
 BENCHMARK_PATH = "data/benchmark_drug_target_disease_matrix.csv"
-OUTPUT_DIR     = Path("data/perturbation_scores")
 BATCH_SIZE     = 16      # samples per forward pass (backward is always per-sample)
-N_TOP_GENES    = 5000    # HVG subset, matching encode_and_save.py
+N_TOP_GENES    = 2000    # HVG subset, matching encode_and_save.py
 EPS            = 1e-8    # numerical stability for gradient L2 normalisation
 PERTURBATION_DIR = -1    # δ = -1: knockdown for all targets (mission statement)
 _TARGET_SUM    = 1e4     # library-size normalisation target, matching utils.py
+OUTPUT_DIR     = Path(f"data/perturbation_scores/{N_TOP_GENES}_top_genes")
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger(__name__)
@@ -377,7 +377,7 @@ def run_perturbation_pipeline(
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     results = []
 
-    with MissingTargetGenesList() as missing:
+    with MissingTargetGenesList(out=f"missing_target_genes_top{N_TOP_GENES}.json") as missing:
         for disease_abbrev, disease_group in benchmark.groupby("disease_abbrev"):
             log.info("=== Disease: %s ===", disease_abbrev)
 
@@ -438,13 +438,23 @@ def run_perturbation_pipeline(
                     symbol = symbol.strip()
                     entrez = symbol_to_entrez.get(symbol)
                     if entrez is None:
-                        log.warning(
-                            "  Target gene '%s' not found in cohort var (may have "
-                            "been dropped by HVG filtering) — skipping for drug %s.",
-                            symbol, drug_name,
-                        )
-                        # Update the json file with the missing target genes, its drug and the addressed disease
-                        missing.update(symbol, disease_abbrev, drug_name)
+                        # Look for entrez from gene alias map
+                        if symbol in GENE_ALIAS_MAP:
+                            for s in GENE_ALIAS_MAP[symbol]:
+                                entrez_alias = symbol_to_entrez.get(s)
+                                if entrez_alias is not None:
+                                    target_gene_ids.append( tokenizer.convert_tokens_to_ids(entrez_alias) )
+                                else:
+                                    # Update the json file with the missing target genes, its drug and the addressed disease
+                                    missing.update(symbol, disease_abbrev, drug_name)
+                        else:
+                            log.warning(
+                                "  Target gene '%s' not found in cohort var (may have "
+                                "been dropped by HVG filtering) — skipping for drug %s.",
+                                symbol, drug_name,
+                            )
+                            # Update the json file with the missing target genes, its drug and the addressed disease
+                            missing.update(symbol, disease_abbrev, drug_name)
                     else:
                         target_gene_ids.append( tokenizer.convert_tokens_to_ids(entrez) )
 
