@@ -51,6 +51,7 @@ from tqdm import tqdm
 
 from eva_rna.utils import _normalize_and_log
 
+from gene_alias_map import MissingTargetGenesList
 from encode_and_save import load_cohort_data
 from gradient_flow_pert_loss import perturbation_loss
 from scoring import compute_healthy_centroid, compute_shift_score
@@ -62,7 +63,7 @@ from scoring import compute_healthy_centroid, compute_shift_score
 BENCHMARK_PATH = "data/benchmark_drug_target_disease_matrix.csv"
 OUTPUT_DIR     = Path("data/perturbation_scores")
 BATCH_SIZE     = 16      # samples per forward pass (backward is always per-sample)
-N_TOP_GENES    = 4000    # HVG subset, matching encode_and_save.py
+N_TOP_GENES    = 5000    # HVG subset, matching encode_and_save.py
 EPS            = 1e-8    # numerical stability for gradient L2 normalisation
 PERTURBATION_DIR = -1    # δ = -1: knockdown for all targets (mission statement)
 _TARGET_SUM    = 1e4     # library-size normalisation target, matching utils.py
@@ -276,11 +277,16 @@ def perturb_one_sample(
     """
     model.eval()
 
-    # Forward pass — model weights are frozen (no_grad not used here so that
-    # autograd tracks the graph from gene_embeddings → decode → loss)
-    out       = model.encode(gene_ids_1, expression_values_1)
-    z         = out.gene_embeddings                      # (1, S, H) — on graph
-    pred_expr = model.decode(z)                          # (1, S) — on graph
+    # Encode under no_grad — we do not want gradients flowing through the
+    # encoder weights (they are frozen and we never update them).
+    with torch.no_grad():
+        out = model.encode(gene_ids_1, expression_values_1)
+
+    # Detach z from the encoder graph and re-attach it as a fresh leaf tensor
+    # that requires a gradient.  Backward will then accumulate ∇_z directly
+    # into z.grad without touching any model parameter.
+    z         = out.gene_embeddings.detach().requires_grad_(True)  # (1, S, H) — leaf
+    pred_expr = model.decode(z)                                    # (1, S) — on graph
 
     directions = [PERTURBATION_DIR] * len(target_gene_ids)
 
@@ -297,9 +303,8 @@ def perturb_one_sample(
             x_orig = model.decode(z)
         return z.detach().cpu(), x_orig.detach().cpu()
 
-    # z is not a leaf tensor (it is an intermediate output of the encoder),
-    # so we must call retain_grad() to keep its gradient after backward().
-    z.retain_grad()
+    # z is now a leaf tensor — its gradient is populated automatically by
+    # backward(); retain_grad() is not needed.
     loss.sum().backward()
 
     grad_z = z.grad                                      # (1, S, H)
@@ -372,136 +377,141 @@ def run_perturbation_pipeline(
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     results = []
 
-    for disease_abbrev, disease_group in benchmark.groupby("disease_abbrev"):
-        log.info("=== Disease: %s ===", disease_abbrev)
+    with MissingTargetGenesList() as missing:
+        for disease_abbrev, disease_group in benchmark.groupby("disease_abbrev"):
+            log.info("=== Disease: %s ===", disease_abbrev)
 
-        # ---- Load cohort and prepare shared tokenisation ------------------
-        adata = load_cohort_data(disease_abbrev, N_TOP_GENES)
-        X_filtered, token_ids_tensor, _ = prepare_tokenisation(
-            adata, tokenizer, device
-        )
-
-        # Build symbol → Entrez ID map from adata.var.
-        # adata.var_names contains Entrez IDs as strings (e.g. "7157");
-        # adata.var["gene_symbols"] contains HGNC symbols (e.g. "TP53").
-        # The benchmark uses HGNC symbols, so we need this lookup to convert
-        # target gene symbols to the integer token IDs expected by the model.
-        symbol_to_entrez: dict[str, int] = {
-            symbol: int(entrez)
-            for entrez, symbol in zip(
-                adata.var_names, adata.var["gene_symbols"]
+            # ---- Load cohort and prepare shared tokenisation ------------------
+            adata = load_cohort_data(disease_abbrev, N_TOP_GENES)
+            
+            X_filtered, token_ids_tensor, _ = prepare_tokenisation(
+                adata, tokenizer, device
             )
-        }
 
-        disease_mask = (adata.obs["disease"] != "Control").values
-        healthy_mask = (adata.obs["disease"] == "Control").values
-
-        disease_expr = X_filtered[disease_mask]   # (n_disease, n_genes)
-        healthy_expr = X_filtered[healthy_mask]   # (n_healthy, n_genes)
-
-        n_disease = disease_mask.sum()
-        n_healthy = healthy_mask.sum()
-        log.info("  %d disease samples, %d healthy controls", n_disease, n_healthy)
-
-        # ---- Encode healthy samples, decode → healthy expression centroid -
-        log.info("  Building healthy expression centroid...")
-        _, healthy_decoded = encode_and_decode_samples(
-            model, healthy_expr, token_ids_tensor, device, desc="Healthy"
-        )                                          # (n_healthy, S)
-        healthy_centroid = compute_healthy_centroid(healthy_decoded)  # (S,)
-
-        # ---- Encode disease samples (original decoded expression) ----------
-        log.info("  Encoding disease samples...")
-        _, disease_decoded_orig = encode_and_decode_samples(
-            model, disease_expr, token_ids_tensor, device, desc="Disease"
-        )                                          # (n_disease, S)
-
-        # ---- Per-drug perturbation loop -----------------------------------
-        for _, row in disease_group.iterrows():
-            drug_name        = row["drug_name"]
-            target_genes_raw = row["target_genes"]   # semicolon-separated HGNC symbols
-            expected         = row["expected_efficacy"]
-
-            # Resolve HGNC symbols → Entrez integer IDs via adata.var.
-            # Symbols absent from the HVG-filtered cohort (e.g. low-variance
-            # genes dropped by highly_variable_genes) are skipped with a warning.
-            target_gene_ids: list[int] = []
-            for symbol in str(target_genes_raw).split(";"):
-                symbol = symbol.strip()
-                entrez = symbol_to_entrez.get(symbol)
-                if entrez is None:
-                    log.warning(
-                        "  Target gene '%s' not found in cohort var (may have "
-                        "been dropped by HVG filtering) — skipping for drug %s.",
-                        symbol, drug_name,
-                    )
-                else:
-                    target_gene_ids.append(entrez)
-
-            if not target_gene_ids:
-                log.warning(
-                    "  No target genes resolved for drug %s in disease %s — "
-                    "skipping this drug-disease pair.",
-                    drug_name, disease_abbrev,
+            # Build symbol → Entrez ID map from adata.var.
+            # adata.var_names contains Entrez IDs as strings (e.g. "7157");
+            # adata.var["gene_symbols"] contains HGNC symbols (e.g. "TP53").
+            # The benchmark uses HGNC symbols, so we need this lookup to convert
+            # target gene symbols to the integer token IDs expected by the model.
+            symbol_to_entrez: dict[str, str] = {
+                symbol: entrez
+                for entrez, symbol in zip(
+                    adata.var_names, adata.var["gene_symbols"]
                 )
+            }
+
+            disease_mask = (adata.obs["disease"] != "Control").values
+            healthy_mask = (adata.obs["disease"] == "Control").values
+
+            disease_expr = X_filtered[disease_mask]   # (n_disease, n_genes)
+            healthy_expr = X_filtered[healthy_mask]   # (n_healthy, n_genes)
+
+            n_disease = disease_mask.sum()
+            n_healthy = healthy_mask.sum()
+            log.info("  %d disease samples, %d healthy controls", n_disease, n_healthy)
+
+            # ---- Encode healthy samples, decode → healthy expression centroid -
+            log.info("  Building healthy expression centroid...")
+            _, healthy_decoded = encode_and_decode_samples(
+                model, healthy_expr, token_ids_tensor, device, desc="Healthy"
+            )                                          # (n_healthy, S)
+            healthy_centroid = compute_healthy_centroid(healthy_decoded)  # (S,)
+
+            # ---- Encode disease samples (original decoded expression) ----------
+            log.info("  Encoding disease samples...")
+            _, disease_decoded_orig = encode_and_decode_samples(
+                model, disease_expr, token_ids_tensor, device, desc="Disease"
+            )                                          # (n_disease, S)
+
+            # ---- Per-drug perturbation loop -----------------------------------
+            for _, row in disease_group.iterrows():
+                drug_name        = row["drug_name"]
+                target_genes_raw = row["target_genes"]   # semicolon-separated HGNC symbols
+                expected         = row["expected_efficacy"]
+
+                # Resolve HGNC symbols → Entrez integer IDs via adata.var.
+                # Symbols absent from the HVG-filtered cohort (e.g. low-variance
+                # genes dropped by highly_variable_genes) are skipped with a warning.
+                # Then, resolve Entrez -> gene IDs via tokenizer.convert_tokens_to_ids
+                target_gene_ids: list[int] = []
+                for symbol in str(target_genes_raw).split(";"):
+                    symbol = symbol.strip()
+                    entrez = symbol_to_entrez.get(symbol)
+                    if entrez is None:
+                        log.warning(
+                            "  Target gene '%s' not found in cohort var (may have "
+                            "been dropped by HVG filtering) — skipping for drug %s.",
+                            symbol, drug_name,
+                        )
+                        # Update the json file with the missing target genes, its drug and the addressed disease
+                        missing.update(symbol, disease_abbrev, drug_name)
+                    else:
+                        target_gene_ids.append( tokenizer.convert_tokens_to_ids(entrez) )
+
+                if not target_gene_ids:
+                    log.warning(
+                        "  No target genes resolved for drug %s in disease %s — "
+                        "skipping this drug-disease pair.",
+                        drug_name, disease_abbrev,
+                    )
+                    results.append({
+                        "drug_name":         drug_name,
+                        "disease_abbrev":    disease_abbrev,
+                        "median_score":      float("nan"),
+                        "expected_efficacy": expected,
+                    })
+                    continue
+
+                log.info("  Drug: %-30s  targets: %s", drug_name, target_gene_ids)
+
+                # Perturb each disease sample individually (one backward per sample)
+                perturbed_x_list: list[torch.Tensor] = []
+
+                for i in tqdm(range(n_disease), desc=f"{drug_name}", leave=False):
+                    gene_ids_1, expr_vals_1 = make_batch_tensors(
+                        disease_expr, token_ids_tensor, [i], device
+                    )                                  # (1, n_genes) each
+
+                    _, x_prime = perturb_one_sample(
+                        model=model,
+                        gene_ids_1=gene_ids_1,
+                        expression_values_1=expr_vals_1,
+                        target_gene_ids=target_gene_ids,
+                        device=device,
+                    )                                  # (1, S)
+
+                    perturbed_x_list.append(x_prime)
+
+                perturbed_x = torch.cat(perturbed_x_list, dim=0)   # (n_disease, S)
+
+                # Save per-patient perturbed expression profiles
+                out_path = OUTPUT_DIR / f"{disease_abbrev}_{drug_name}_perturbed_expr.npy"
+                np.save(out_path, perturbed_x.numpy())
+                log.info("  Saved perturbed expressions → %s", out_path)
+
+                # Score: shift of x' toward healthy centroid
+                # NOTE: compute_shift_score raises NotImplementedError until the
+                # scoring formulation in expression space is finalised.
+                try:
+                    scores = compute_shift_score(
+                        original_x=disease_decoded_orig,
+                        perturbed_x=perturbed_x,
+                        healthy_centroid=healthy_centroid,
+                    )
+                    median_score = float(scores.median().item())
+                except NotImplementedError:
+                    log.warning(
+                        "  compute_shift_score not yet implemented — "
+                        "median_score set to NaN. Implement scoring.py to proceed."
+                    )
+                    median_score = float("nan")
+
                 results.append({
                     "drug_name":         drug_name,
                     "disease_abbrev":    disease_abbrev,
-                    "median_score":      float("nan"),
+                    "median_score":      median_score,
                     "expected_efficacy": expected,
                 })
-                continue
-
-            log.info("  Drug: %-30s  targets: %s", drug_name, target_gene_ids)
-
-            # Perturb each disease sample individually (one backward per sample)
-            perturbed_x_list: list[torch.Tensor] = []
-
-            for i in tqdm(range(n_disease), desc=f"{drug_name}", leave=False):
-                gene_ids_1, expr_vals_1 = make_batch_tensors(
-                    disease_expr, token_ids_tensor, [i], device
-                )                                  # (1, n_genes) each
-
-                _, x_prime = perturb_one_sample(
-                    model=model,
-                    gene_ids_1=gene_ids_1,
-                    expression_values_1=expr_vals_1,
-                    target_gene_ids=target_gene_ids,
-                    device=device,
-                )                                  # (1, S)
-
-                perturbed_x_list.append(x_prime)
-
-            perturbed_x = torch.cat(perturbed_x_list, dim=0)   # (n_disease, S)
-
-            # Save per-patient perturbed expression profiles
-            out_path = OUTPUT_DIR / f"{disease_abbrev}_{drug_name}_perturbed_expr.npy"
-            np.save(out_path, perturbed_x.numpy())
-            log.info("  Saved perturbed expressions → %s", out_path)
-
-            # Score: shift of x' toward healthy centroid
-            # NOTE: compute_shift_score raises NotImplementedError until the
-            # scoring formulation in expression space is finalised.
-            try:
-                scores = compute_shift_score(
-                    original_x=disease_decoded_orig,
-                    perturbed_x=perturbed_x,
-                    healthy_centroid=healthy_centroid,
-                )
-                median_score = float(scores.median().item())
-            except NotImplementedError:
-                log.warning(
-                    "  compute_shift_score not yet implemented — "
-                    "median_score set to NaN. Implement scoring.py to proceed."
-                )
-                median_score = float("nan")
-
-            results.append({
-                "drug_name":         drug_name,
-                "disease_abbrev":    disease_abbrev,
-                "median_score":      median_score,
-                "expected_efficacy": expected,
-            })
 
     results_df = pd.DataFrame(results)
     csv_path   = OUTPUT_DIR / "perturbation_results.csv"
