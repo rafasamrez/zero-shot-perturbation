@@ -30,10 +30,15 @@ GENE_ALIAS_MAP: dict[str, list[str]] = {
 import json
 class MissingTargetGenesList:
     def __enter__(self):
-        self._missing = {}
-        self._output_fn = "missing_target_genes.json"
         return self
     
+    def __init__(self, out=None):
+        self._missing = {}
+        self._output_fn = out
+        if out is None:
+            self._output_fn = "missing_target_genes.json"
+        
+
     def update(self, gene, disease, drug):
         if gene not in self._missing.keys():
             self._missing[gene] = set()
