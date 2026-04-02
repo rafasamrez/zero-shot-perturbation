@@ -286,26 +286,27 @@ def perturb_one_sample(
     # that requires a gradient.  Backward will then accumulate ∇_z directly
     # into z.grad without touching any model parameter.
     z         = out.gene_embeddings.detach().requires_grad_(True)  # (1, S, H) — leaf
-    pred_expr = model.decode(z)                                    # (1, S) — on graph
+    with torch.enable_grad():
+        pred_expr = model.decode(z)                                    # (1, S) — on graph
 
-    directions = [PERTURBATION_DIR] * len(target_gene_ids)
+        directions = [PERTURBATION_DIR] * len(target_gene_ids)
 
-    try:
-        loss = perturbation_loss(
-            predicted_expression=pred_expr,
-            gene_ids=gene_ids_1,
-            target_gene_ids=target_gene_ids,
-            perturbation_directions=directions,
-        )                                                # (1,)
-    except KeyError as exc:
-        log.warning("Skipping perturbation (target gene absent): %s", exc)
-        with torch.no_grad():
-            x_orig = model.decode(z)
-        return z.detach().cpu(), x_orig.detach().cpu()
+        try:
+            loss = perturbation_loss(
+                predicted_expression=pred_expr,
+                gene_ids=gene_ids_1,
+                target_gene_ids=target_gene_ids,
+                perturbation_directions=directions,
+            )                                                # (1,)
+        except KeyError as exc:
+            log.warning("Skipping perturbation (target gene absent): %s", exc)
+            with torch.no_grad():
+                x_orig = model.decode(z)
+            return z.detach().cpu(), x_orig.detach().cpu()
 
-    # z is now a leaf tensor — its gradient is populated automatically by
-    # backward(); retain_grad() is not needed.
-    loss.sum().backward()
+        # z is now a leaf tensor — its gradient is populated automatically by
+        # backward(); retain_grad() is not needed.
+        loss.mean().backward()
 
     grad_z = z.grad                                      # (1, S, H)
 
