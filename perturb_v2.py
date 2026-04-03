@@ -62,11 +62,11 @@ from scoring import compute_healthy_centroid, compute_shift_score
 
 BENCHMARK_PATH = "data/benchmark_drug_target_disease_matrix.csv"
 BATCH_SIZE     = 16      # samples per forward pass (backward is always per-sample)
-N_TOP_GENES    = 2000    # HVG subset, matching encode_and_save.py
+N_TOP_GENES    = 2500    # HVG subset, matching encode_and_save.py
 EPS            = 1e-8    # numerical stability for gradient L2 normalisation
 PERTURBATION_DIR = -1    # δ = -1: knockdown for all targets (mission statement)
 _TARGET_SUM    = 1e4     # library-size normalisation target, matching utils.py
-OUTPUT_DIR     = Path(f"data/perturbation_scores/{N_TOP_GENES}_top_genes")
+OUTPUT_DIR     = Path(f"data/perturbation_scores_v2/{N_TOP_GENES}_top_genes")
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger(__name__)
@@ -391,7 +391,17 @@ def run_perturbation_pipeline(
             log.info("=== Disease: %s ===", disease_abbrev)
 
             # ---- Load cohort and prepare shared tokenisation ------------------
-            adata = load_cohort_data(disease_abbrev, N_TOP_GENES)
+            # Select genes that must be included in the expression, from list of target genes of the tested drugs
+            target_genes_list = []
+            for target_gene_1 in disease_group.target_genes:
+                target_gene_1_split = target_gene_1.split(';')
+                for gene in  target_gene_1_split:
+                    if gene in GENE_ALIAS_MAP:
+                        target_genes_list += GENE_ALIAS_MAP[gene]
+                    else:
+                        target_genes_list.append(gene)
+
+            adata = load_cohort_data(disease_abbrev, N_TOP_GENES, target_genes_list)
             
             X_filtered, token_ids_tensor, _ = prepare_tokenisation(
                 adata, tokenizer, device
