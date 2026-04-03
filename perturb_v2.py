@@ -444,6 +444,16 @@ def run_perturbation_pipeline(
                 model, disease_expr, token_ids_tensor, device, desc="Disease"
             )                                          # (n_disease, S, H), (n_disease, S)
 
+            # Save disease-level arrays once (avoid redundant saves per drug)
+            disease_data_path = OUTPUT_DIR / f"{disease_abbrev}_disease_data.npz"
+            np.savez(
+                disease_data_path,
+                healthy_decoded=healthy_decoded.numpy(),
+                disease_gene_embs=disease_gene_embs.numpy(),
+                disease_decoded_orig=disease_decoded_orig.numpy(),
+            )
+            log.info("  Saved disease data → %s", disease_data_path)
+
             # ---- Per-drug perturbation loop -----------------------------------
             for _, row in disease_group.iterrows():
                 drug_name        = row["drug_name"]
